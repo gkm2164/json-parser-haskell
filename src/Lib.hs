@@ -2,13 +2,6 @@
 
 module Lib
     (
-      parseBool,
-      parseString,
-      parseArray,
-      parseObject,
-      app,
-      mapInfo,
-      stringInfo,
       toJson
     ) where
 
@@ -130,24 +123,26 @@ ifState p t f =
          else app f s)
 
 parseNumber :: ST JObject
-parseNumber = S (error "unimplemented yet")
+parseNumber =
+  S (\s ->
+       let (num, v) = span (`elem` "0123456789") s
+        in (Just $ JNumber (read num :: Int), v))
 
 parseNull :: ST JObject
 parseNull = S (\s -> (Just JNull, drop 4 s))
 
 parseObject :: ST JObject
 parseObject = S (\s ->
-  let parser = case s of (x:_) | x == 't' || x == 'f' -> parseBool
-                               | x `elem` "0123456789" -> parseNumber
-                               | x == '{' -> parseMap
-                               | x == '[' -> parseArray
-                               | x == '"' -> parseString
-                               | x == 'n' -> parseNull
-                               | otherwise -> error "Unexpected type"
-  in app parser s)
+  let s' = trim s
+      parser = case s' of (x:_) | x == 't' || x == 'f' -> parseBool
+                                | x `elem` "0123456789" -> parseNumber
+                                | x == '{' -> parseMap
+                                | x == '[' -> parseArray
+                                | x == '"' -> parseString
+                                | x == 'n' -> parseNull
+                                | otherwise -> error "Unexpected type"
+  in app parser s')
+  where trim = dropWhile (`elem` " \n\t")
 
 toJson :: String -> Maybe JObject
 toJson str = fst $ app parseObject str
-
-mapInfo = JMap [(JString "a", JString "a"), (JString "b", JString "b")]
-stringInfo = JString "xx"
