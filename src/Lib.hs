@@ -1,3 +1,5 @@
+{-# LANGUAGE ScopedTypeVariables #-}
+
 module Lib
     (
       parseBool,
@@ -17,6 +19,7 @@ data JObject = JNumber Int
              | JBool Bool
              | JArray [JObject]
              | JMap [JsonAssoc]
+             | JNull
   deriving Show
 
 type JsonAssoc = (JObject, JObject)
@@ -106,14 +109,42 @@ parseMap = do
   _ <- takeChar '}'
   return $ JMap objs
 
-parseUntil :: Char -> Char -> ST a -> ST b
-parseUntil _ _ _ = error "unimplemented yet"
+parseUntil :: forall a. Char -> Char -> ST a -> ST [a]
+parseUntil term delim parser = S $ parseUntil' []
+  where
+    parseUntil' :: [a] -> State -> (Maybe [a], State)
+    parseUntil' res all@(x:xs)
+      | x == term = (Just res, xs)
+      | otherwise = app w all
+      where
+        w :: ST [a]
+        w = do
+          elem <- parser
+          ifState (\xs -> head xs == delim) (S $ parseUntil' (elem : res)) (pure (elem : res))
+
+ifState :: (State -> Bool) -> ST a -> ST a -> ST a
+ifState p t f =
+  S (\s ->
+       if p s
+         then app t s
+         else app f s)
 
 parseNumber :: ST JObject
 parseNumber = S (error "unimplemented yet")
 
+parseNull :: ST JObject
+parseNull = S (\s -> (Just JNull, drop 4 s))
+
 parseObject :: ST JObject
-parseObject = S (\s -> (Nothing, s))
+parseObject = S (\s ->
+  let parser = case s of (x:_) | x == 't' || x == 'f' -> parseBool
+                               | x `elem` "0123456789" -> parseNumber
+                               | x == '{' -> parseMap
+                               | x == '[' -> parseArray
+                               | x == '"' -> parseString
+                               | x == 'n' -> parseNull
+                               | otherwise -> error "Unexpected type"
+  in app parser s)
 
 toJson :: String -> Maybe JObject
 toJson str = fst $ app parseObject str

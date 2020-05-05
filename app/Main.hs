@@ -11,4 +11,4 @@ main = do
   print (app parseString "\"Hello World!\"")
   putStrLn ""
   print stringInfo
-  print (app parseObject "xx")
+  print (toJson "null")
