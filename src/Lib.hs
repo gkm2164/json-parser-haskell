@@ -1,4 +1,5 @@
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
 
 module Lib
     (
@@ -27,16 +28,20 @@ type JsonAssoc = (JObject, JObject)
 
 type State = String
 
-newtype ST a = S (State -> (Maybe a, State))
+type Error = String
 
-app :: ST a -> State -> (Maybe a, State)
+type STResult a = Either Error a
+
+newtype ST a = S (State -> (STResult a, State))
+
+app :: ST a -> State -> (STResult a, State)
 app (S f) = f
 
 instance Functor ST where
   fmap f st = S (\s -> let (v, s') = app st s in (fmap f v, s'))
 
 instance Applicative ST where
-  pure x = S (\s -> (Just x, s))
+  pure x = S (Right x,)
   stF <*> stX = S (\s ->
     let (f, s') = app stF s
         (x, s'') = app stX s'
@@ -45,17 +50,17 @@ instance Applicative ST where
 instance Monad ST where
   stX >>= f = S (\s ->
     let (x, s') = app stX s in case x of
-      Nothing -> (Nothing, s)
-      Just v -> app (f v) s')
+      Left e -> (Left e, s)
+      Right v -> app (f v) s')
 
 takeChar :: Char -> ST Char
 takeChar ch = S t
   where
-    t :: String -> (Maybe Char, String)
+    t :: String -> (STResult Char, String)
     t all@(x:xs)
       | x == ' '  = t xs
-      | x == ch   = (Just x, xs)
-      | otherwise = (Nothing, all)
+      | x == ch   = (Right x, xs)
+      | otherwise = (Left $ "head is not " ++ show ch, all)
 
 parseAssoc :: ST JsonAssoc
 parseAssoc = do
@@ -69,16 +74,16 @@ parseBool =
   S (\s ->
        case () of
          _
-           | "true" `isPrefixOf` s -> (Just $ JBool True, drop 4 s)
-           | "false" `isPrefixOf` s -> (Just $ JBool False, drop 5 s)
-           | otherwise -> (Nothing, ""))
+           | "true" `isPrefixOf` s -> (Right $ JBool True, drop 4 s)
+           | "false" `isPrefixOf` s -> (Right $ JBool False, drop 5 s)
+           | otherwise -> (Left "error while parse Bool", ""))
 
 parseString :: ST JObject
 parseString =
   S (\s ->
       let (_:ss) = s
           (v, nextS) = t ss "" False
-      in (Just $ JString v, nextS))
+      in (Right $ JString v, nextS))
   where
     t :: String -> String -> Bool -> (String, String)
     t [] _ _              = error ""
@@ -105,9 +110,9 @@ parseMap = do
 parseUntil :: forall a. Char -> Char -> ST a -> ST [a]
 parseUntil term delim parser = S $ parseUntil' []
   where
-    parseUntil' :: [a] -> State -> (Maybe [a], State)
+    parseUntil' :: [a] -> State -> (STResult [a], State)
     parseUntil' res all@(x:xs)
-      | x == term = (Just res, xs)
+      | x == term = (Right res, xs)
       | otherwise = app w all
       where
         w :: ST [a]
@@ -126,10 +131,10 @@ parseNumber :: ST JObject
 parseNumber =
   S (\s ->
        let (num, v) = span (`elem` "0123456789") s
-        in (Just $ JNumber (read num :: Int), v))
+        in (Right $ JNumber (read num :: Int), v))
 
 parseNull :: ST JObject
-parseNull = S (\s -> (Just JNull, drop 4 s))
+parseNull = S (\s -> (Right JNull, drop 4 s))
 
 parseObject :: ST JObject
 parseObject = S (\s ->
@@ -144,5 +149,5 @@ parseObject = S (\s ->
   in app parser s')
   where trim = dropWhile (`elem` " \n\t")
 
-toJson :: String -> Maybe JObject
+toJson :: String -> STResult JObject
 toJson str = fst $ app parseObject str
