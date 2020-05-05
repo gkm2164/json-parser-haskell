@@ -88,8 +88,8 @@ parseString =
     t :: String -> String -> Bool -> (String, String)
     t [] _ _              = error ""
     t ('\"':xs) ret False = (ret, xs)
-    t ('\"':xs) ret True  = t xs (ret ++ "\"") False
     t ('\\':xs) ret False = t xs ret True
+    t ('\"':xs) ret True  = t xs (ret ++ "\"") False
     t ('\\':xs) ret True  = t xs (ret ++ "\\") False
     t (x:xs) ret _        = t xs (ret ++ [x]) False
 
