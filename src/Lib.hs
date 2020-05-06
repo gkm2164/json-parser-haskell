@@ -7,16 +7,17 @@ module Lib
     ) where
 
 import Data.List
+import Data.HashMap.Lazy
 
 data JObject = JNumber Int
              | JString String
              | JBool Bool
              | JArray [JObject]
-             | JMap [JsonAssoc]
+             | JMap (HashMap String JObject)
              | JNull
-  deriving Show
+  deriving (Show, Eq, Ord)
 
-type JsonAssoc = (JObject, JObject)
+type JsonAssoc = (String, JObject)
 
 --instance Show JObject where
 --  show (JNumber x) = show x
@@ -71,7 +72,8 @@ takeString target state = takeString' target state
 
 parseAssoc :: ST JsonAssoc
 parseAssoc = do
-  key <- parseString
+  keyObj <- parseString
+  let (JString key) = keyObj
   _ <- takeChar ':'
   value <- parseObject
   return (key, value)
@@ -103,7 +105,7 @@ parseMap = do
   _ <- takeChar '{'
   objs <- parseUntil '}' ',' parseAssoc
   _ <- takeChar '}'
-  return $ JMap objs
+  return $ JMap (Data.HashMap.Lazy.fromList objs)
 
 parseUntil :: forall a. Char -> Char -> ST a -> ST [a]
 parseUntil term delim parser = S $ parseUntil' []
@@ -116,7 +118,7 @@ parseUntil term delim parser = S $ parseUntil' []
         w :: ST [a]
         w = do
           elem <- parser
-          ifState (== delim) (do 
+          ifState (== delim) (do
             _ <- takeChar delim
             S $ parseUntil' (elem : res)) (pure (elem : res))
 
@@ -130,7 +132,7 @@ ifState p t f =
 parseNumber :: ST JObject
 parseNumber =
   S (\s ->
-       let (num, v) = span (`elem` "0123456789") s
+       let (num, v) = span (`elem` "-0123456789") s
         in (Right $ JNumber (read num :: Int), v))
 
 parseNull :: ST JObject
@@ -153,7 +155,7 @@ parseObject = S (\s ->
   let s' = trim s
       parser = case s' of (x:_) | x == 't' -> parseTrue
                                 | x == 'f' -> parseFalse
-                                | x `elem` "0123456789" -> parseNumber
+                                | x `elem` "-0123456789" -> parseNumber
                                 | x == '{' -> parseMap
                                 | x == '[' -> parseArray
                                 | x == '"' -> parseString

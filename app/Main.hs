@@ -2,8 +2,13 @@ module Main where
 
 import Lib
 
+exampleJsonString = "{" ++
+    "\"name\": \"Gyeongmin Go\"," ++
+    "\"email\": \"gkm2164@gmail.com\"" ++
+  "}"
+
 main :: IO ()
 main = do
   print (toJson "null")
   putStrLn ""
-  print (toJson "{\"name\":1234,\"values\":[1,2,3,4,5]}")
+  print $ toJson exampleJsonString
