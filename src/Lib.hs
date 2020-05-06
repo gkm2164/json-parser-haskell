@@ -60,7 +60,14 @@ takeChar ch = S t
     t all@(x:xs)
       | x == ' '  = t xs
       | x == ch   = (Right x, xs)
-      | otherwise = (Left $ "head is not " ++ show ch, all)
+      | otherwise = (Left $ "head is not " ++ show ch ++ ", remains: [" ++ all ++ "]", all)
+
+takeString :: String -> State -> (STResult String, State)
+takeString target state = takeString' target state
+  where
+    takeString' [] state = (Right target, state)
+    takeString' (x:xs) (s:st) | x /= s = (Left $ "failed to match " ++ target, st)
+                              | otherwise = takeString' xs st
 
 parseAssoc :: ST JsonAssoc
 parseAssoc = do
@@ -68,15 +75,6 @@ parseAssoc = do
   _ <- takeChar ':'
   value <- parseObject
   return (key, value)
-
-parseBool :: ST JObject
-parseBool =
-  S (\s ->
-       case () of
-         _
-           | "true" `isPrefixOf` s -> (Right $ JBool True, drop 4 s)
-           | "false" `isPrefixOf` s -> (Right $ JBool False, drop 5 s)
-           | otherwise -> (Left "error while parse Bool", ""))
 
 parseString :: ST JObject
 parseString =
@@ -118,12 +116,14 @@ parseUntil term delim parser = S $ parseUntil' []
         w :: ST [a]
         w = do
           elem <- parser
-          ifState (\xs -> head xs == delim) (S $ parseUntil' (elem : res)) (pure (elem : res))
+          ifState (== delim) (do 
+            _ <- takeChar delim
+            S $ parseUntil' (elem : res)) (pure (elem : res))
 
-ifState :: (State -> Bool) -> ST a -> ST a -> ST a
+ifState :: (Char -> Bool) -> ST a -> ST a -> ST a
 ifState p t f =
   S (\s ->
-       if p s
+       if p $ head s
          then app t s
          else app f s)
 
@@ -134,12 +134,25 @@ parseNumber =
         in (Right $ JNumber (read num :: Int), v))
 
 parseNull :: ST JObject
-parseNull = S (\s -> (Right JNull, drop 4 s))
+parseNull = do
+  _ <- S $ takeString "null"
+  return JNull
+
+parseTrue :: ST JObject
+parseTrue = do
+  _ <- S $ takeString "true"
+  return $ JBool True
+
+parseFalse :: ST JObject
+parseFalse = do
+  _ <- S $ takeString "false"
+  return $ JBool False
 
 parseObject :: ST JObject
 parseObject = S (\s ->
   let s' = trim s
-      parser = case s' of (x:_) | x == 't' || x == 'f' -> parseBool
+      parser = case s' of (x:_) | x == 't' -> parseTrue
+                                | x == 'f' -> parseFalse
                                 | x `elem` "0123456789" -> parseNumber
                                 | x == '{' -> parseMap
                                 | x == '[' -> parseArray
